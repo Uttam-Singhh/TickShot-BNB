@@ -1,20 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAccount, useBalance, useReadContract } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { TICKSHOT_ABI } from "@/lib/abi";
-import { CONTRACT_ADDRESS } from "@/lib/constants";
+import { CONTRACT_ADDRESS, RoundStatus } from "@/lib/constants";
 import { PriceChart } from "./PriceChart";
 import { RoundInfo } from "./RoundInfo";
 import { BettingPanel } from "./BettingPanel";
 import { RoundHistory } from "./RoundHistory";
 import { AdminPanel } from "./AdminPanel";
+import { ClaimPanel } from "./ClaimPanel";
 
 export function GameBoard() {
   const { address, isConnected } = useAccount();
   const { data: balance } = useBalance({ address });
   const [livePrice, setLivePrice] = useState<number | null>(null);
+  const [autoStatus, setAutoStatus] = useState<string | null>(null);
+  const managerRunning = useRef(false);
 
   const { data: currentRoundId } = useReadContract({
     address: CONTRACT_ADDRESS,
@@ -48,6 +51,50 @@ export function GameBoard() {
 
   const isAdmin =
     address && adminAddress && address.toLowerCase() === adminAddress.toLowerCase();
+
+  // --- Server-side auto round management ---
+  useEffect(() => {
+    const round = currentRound ?? null;
+    if (!round) return;
+
+    const status = round.status;
+    const endTime = Number(round.endTime);
+    const roundIdNum = Number(round.roundId);
+    const now = Math.floor(Date.now() / 1000);
+
+    const needsResolve =
+      roundIdNum > 0 &&
+      (status === RoundStatus.Open || status === RoundStatus.Locked) &&
+      now >= endTime;
+
+    const needsStart =
+      roundIdNum === 0 || status === RoundStatus.Settled;
+
+    if (!needsResolve && !needsStart) return;
+    if (managerRunning.current) return;
+
+    managerRunning.current = true;
+    setAutoStatus(needsResolve ? "Resolving & starting next round..." : "Starting new round...");
+
+    fetch("/api/manage-round", { method: "POST" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.error) {
+          console.error("Round manager error:", data.error);
+          setAutoStatus(null);
+        } else {
+          console.log("Round manager:", data.action);
+          setAutoStatus(null);
+        }
+      })
+      .catch((err) => {
+        console.error("Round manager fetch error:", err);
+        setAutoStatus(null);
+      })
+      .finally(() => {
+        managerRunning.current = false;
+      });
+  }, [currentRound]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6">
@@ -88,7 +135,15 @@ export function GameBoard() {
         </div>
       </header>
 
-      {/* Admin Panel */}
+      {/* Auto-status indicator */}
+      {autoStatus && (
+        <div className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#F0B90B]/10 border border-[#F0B90B]/20 animate-pulse">
+          <div className="w-2 h-2 rounded-full bg-[#F0B90B]" />
+          <span className="text-sm text-[#F0B90B] font-medium">{autoStatus}</span>
+        </div>
+      )}
+
+      {/* Admin Panel (manual controls) */}
       {isAdmin && (
         <div className="mb-6">
           <AdminPanel round={currentRound ?? null} isAdmin={true} />
@@ -103,8 +158,9 @@ export function GameBoard() {
           <RoundInfo round={currentRound ?? null} />
         </div>
 
-        {/* Right: Betting Panel */}
+        {/* Right: Claim + Betting Panel */}
         <div className="space-y-5">
+          {isConnected && <ClaimPanel currentRoundId={roundId} />}
           {isConnected ? (
             <BettingPanel
               round={currentRound ?? null}
