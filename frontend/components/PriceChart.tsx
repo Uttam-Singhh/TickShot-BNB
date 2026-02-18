@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createChart, CandlestickSeries, CandlestickData, Time } from "lightweight-charts";
 import { BINANCE_KLINE_URL, BINANCE_WS_URL } from "@/lib/constants";
 
 export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) => void }) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const [price, setPrice] = useState<number | null>(null);
+  const [prevPrice, setPrevPrice] = useState<number | null>(null);
+  const [flash, setFlash] = useState(false);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -13,38 +16,39 @@ export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) 
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { color: "transparent" },
-        textColor: "#9ca3af",
+        textColor: "#6b7280",
+        fontSize: 11,
       },
       grid: {
-        vertLines: { color: "rgba(255,255,255,0.04)" },
-        horzLines: { color: "rgba(255,255,255,0.04)" },
+        vertLines: { color: "rgba(255,255,255,0.02)" },
+        horzLines: { color: "rgba(255,255,255,0.02)" },
       },
       crosshair: {
-        vertLine: { color: "rgba(240,185,11,0.3)" },
-        horzLine: { color: "rgba(240,185,11,0.3)" },
+        mode: 0,
+        vertLine: { color: "rgba(240,185,11,0.4)", width: 1, labelBackgroundColor: "#F0B90B" },
+        horzLine: { color: "rgba(240,185,11,0.4)", width: 1, labelBackgroundColor: "#F0B90B" },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
-        borderColor: "rgba(255,255,255,0.1)",
+        borderColor: "rgba(255,255,255,0.06)",
       },
       rightPriceScale: {
-        borderColor: "rgba(255,255,255,0.1)",
+        borderColor: "rgba(255,255,255,0.06)",
       },
       width: chartContainerRef.current.clientWidth,
-      height: 350,
+      height: 420,
     });
 
     const series = chart.addSeries(CandlestickSeries, {
       upColor: "#22c55e",
       downColor: "#ef4444",
-      borderUpColor: "#22c55e",
-      borderDownColor: "#ef4444",
+      borderUpColor: "#16a34a",
+      borderDownColor: "#dc2626",
       wickUpColor: "#22c55e",
       wickDownColor: "#ef4444",
     });
 
-    // Load initial klines
     fetch(BINANCE_KLINE_URL)
       .then((res) => res.json())
       .then((data: unknown[]) => {
@@ -57,13 +61,14 @@ export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) 
         }));
         series.setData(candles);
         if (candles.length > 0) {
-          onPriceUpdate?.(candles[candles.length - 1].close);
+          const p = candles[candles.length - 1].close;
+          setPrice(p);
+          onPriceUpdate?.(p);
         }
         chart.timeScale().fitContent();
       })
       .catch(console.error);
 
-    // WebSocket for real-time updates
     const ws = new WebSocket(BINANCE_WS_URL);
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
@@ -78,10 +83,17 @@ export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) 
         close: parseFloat(k.c),
       };
       series.update(candle);
-      onPriceUpdate?.(candle.close);
+      const newPrice = candle.close;
+      setPrevPrice((prev) => prev);
+      setPrice((prev) => {
+        setPrevPrice(prev);
+        return newPrice;
+      });
+      setFlash(true);
+      setTimeout(() => setFlash(false), 400);
+      onPriceUpdate?.(newPrice);
     };
 
-    // Resize observer
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         chart.applyOptions({ width: entry.contentRect.width });
@@ -96,9 +108,41 @@ export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) 
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const priceUp = price && prevPrice ? price >= prevPrice : true;
+  const priceChange = price && prevPrice ? ((price - prevPrice) / prevPrice * 100) : 0;
+
   return (
-    <div className="glass-panel p-4">
-      <h2 className="text-sm font-medium text-gray-400 mb-3">BNB/USD - 1m</h2>
+    <div className="glass-panel p-0 overflow-hidden">
+      {/* Live price banner */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-white/5">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-live-dot" />
+            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Live</span>
+          </div>
+          <span className="text-sm font-medium text-gray-300">BNB / USD</span>
+        </div>
+        {price && (
+          <div className="flex items-center gap-3">
+            <span
+              className={`text-2xl font-mono font-black tracking-tight transition-all ${
+                flash ? "animate-price-flash" : ""
+              } ${priceUp ? "text-green-400" : "text-red-400"}`}
+            >
+              ${price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            {priceChange !== 0 && (
+              <span className={`text-xs font-mono font-bold px-2 py-1 rounded-md ${
+                priceUp
+                  ? "text-green-400 bg-green-500/10"
+                  : "text-red-400 bg-red-500/10"
+              }`}>
+                {priceUp ? "+" : ""}{priceChange.toFixed(3)}%
+              </span>
+            )}
+          </div>
+        )}
+      </div>
       <div ref={chartContainerRef} className="w-full" />
     </div>
   );

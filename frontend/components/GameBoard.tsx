@@ -50,31 +50,34 @@ export function GameBoard() {
     address && adminAddress && address.toLowerCase() === adminAddress.toLowerCase();
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
+    <div className="max-w-7xl mx-auto px-4 py-4 sm:py-6">
       {/* Header */}
-      <header className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold">
-            <span className="text-[#F0B90B]">Tick</span>
-            <span className="text-white">Shot</span>
-          </h1>
-          <p className="text-sm text-gray-400 mt-1">BNB/USD Price Prediction</p>
-        </div>
+      <header className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
-          {isConnected && balance && (
-            <div className="hidden sm:block text-right">
-              <p className="text-xs text-gray-400">Balance</p>
-              <p className="font-mono text-sm text-[#F0B90B]">
-                {parseFloat(balance.formatted).toFixed(4)} {balance.symbol}
-              </p>
+          <div>
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tight">
+              <span className="bg-gradient-to-r from-[#F0B90B] to-[#FCD535] bg-clip-text text-transparent">Tick</span>
+              <span className="text-white">Shot</span>
+            </h1>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500 mt-0.5">BNB Price Prediction</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 sm:gap-4">
+          {/* Live price ticker */}
+          {livePrice && (
+            <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/5">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-live-dot" />
+              <span className="font-mono text-sm font-bold text-white">
+                ${livePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
             </div>
           )}
-          {livePrice && (
-            <div className="hidden sm:block text-right">
-              <p className="text-xs text-gray-400">BNB/USD</p>
-              <p className="font-mono text-sm text-white">
-                ${livePrice.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
+          {isConnected && balance && (
+            <div className="hidden sm:block px-3 py-2 rounded-xl bg-white/[0.03] border border-white/5">
+              <span className="font-mono text-sm text-[#F0B90B] font-bold">
+                {parseFloat(balance.formatted).toFixed(4)}
+              </span>
+              <span className="text-gray-500 text-xs ml-1">{balance.symbol}</span>
             </div>
           )}
           <ConnectButton
@@ -88,31 +91,30 @@ export function GameBoard() {
       {/* Admin Panel */}
       {isAdmin && (
         <div className="mb-6">
-          <AdminPanel
-            round={currentRound ?? null}
-            isAdmin={true}
-          />
+          <AdminPanel round={currentRound ?? null} isAdmin={true} />
         </div>
       )}
 
       {/* Main Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Left: Chart + Round Info */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-5">
           <PriceChart onPriceUpdate={setLivePrice} />
           <RoundInfo round={currentRound ?? null} />
         </div>
 
         {/* Right: Betting Panel */}
-        <div className="space-y-6">
+        <div className="space-y-5">
           {isConnected ? (
             <BettingPanel
               round={currentRound ?? null}
               userBet={userBet ?? null}
             />
           ) : (
-            <div className="glass-panel p-8 text-center">
-              <p className="text-gray-400 mb-4">Connect your wallet to start betting</p>
+            <div className="glass-panel p-10 text-center">
+              <div className="text-4xl mb-4 animate-float">&#128176;</div>
+              <p className="text-gray-300 font-medium mb-2">Ready to predict?</p>
+              <p className="text-gray-500 text-sm mb-6">Connect your wallet to start betting on BNB price</p>
               <ConnectButton />
             </div>
           )}
@@ -125,8 +127,8 @@ export function GameBoard() {
       </div>
 
       {/* Footer */}
-      <footer className="mt-12 text-center text-xs text-gray-600 pb-8">
-        <p>TickShot BNB - BSC Testnet - 3% platform fee - Not financial advice</p>
+      <footer className="mt-10 text-center text-xs text-gray-700 pb-6 border-t border-white/5 pt-6">
+        <p>TickShot BNB &middot; BSC Testnet &middot; 3% platform fee &middot; Not financial advice</p>
       </footer>
     </div>
   );
