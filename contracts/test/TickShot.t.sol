@@ -380,8 +380,100 @@ contract TickShotTest is Test {
     // ── Test: Stale Oracle ─────────────────────────────────────────────
 
     function testStaleOracle() public {
-        mockOracle.setUpdatedAt(block.timestamp - 301);
+        vm.warp(10000); // ensure enough room for subtraction
+        mockOracle.setUpdatedAt(block.timestamp - 3601);
         vm.expectRevert("Stale price");
         game.startRound();
+    }
+
+    // ── Test: Admin-Submitted Price Functions ─────────────────────────
+
+    function testStartRoundWithPrice() public {
+        game.startRoundWithPrice(620_00000000); // $620.00
+
+        TickShot.Round memory round = game.getRound(1);
+        assertEq(round.roundId, 1);
+        assertEq(uint8(round.status), uint8(TickShot.RoundStatus.Open));
+        assertEq(round.startPrice, 620_00000000);
+        assertEq(game.currentRoundId(), 1);
+    }
+
+    function testStartRoundWithPriceNonAdmin() public {
+        vm.prank(alice);
+        vm.expectRevert("Not admin");
+        game.startRoundWithPrice(620_00000000);
+    }
+
+    function testStartRoundWithInvalidPrice() public {
+        vm.expectRevert("Invalid price");
+        game.startRoundWithPrice(0);
+    }
+
+    function testResolveRoundWithPrice() public {
+        game.startRoundWithPrice(620_00000000);
+
+        vm.prank(alice);
+        game.placeBet{value: 0.1 ether}(1, TickShot.Direction.Up);
+        vm.prank(bob);
+        game.placeBet{value: 0.1 ether}(1, TickShot.Direction.Down);
+
+        vm.warp(block.timestamp + 121);
+        game.resolveRoundWithPrice(1, 625_00000000); // Price went up
+
+        TickShot.Round memory round = game.getRound(1);
+        assertEq(uint8(round.status), uint8(TickShot.RoundStatus.Settled));
+        assertEq(uint8(round.result), uint8(TickShot.RoundResult.Up));
+        assertEq(round.endPrice, 625_00000000);
+    }
+
+    function testResolveRoundWithPriceDown() public {
+        game.startRoundWithPrice(620_00000000);
+
+        vm.prank(alice);
+        game.placeBet{value: 0.1 ether}(1, TickShot.Direction.Up);
+        vm.prank(bob);
+        game.placeBet{value: 0.1 ether}(1, TickShot.Direction.Down);
+
+        vm.warp(block.timestamp + 121);
+        game.resolveRoundWithPrice(1, 615_00000000); // Price went down
+
+        TickShot.Round memory round = game.getRound(1);
+        assertEq(uint8(round.result), uint8(TickShot.RoundResult.Down));
+    }
+
+    function testResolveRoundWithInvalidPrice() public {
+        game.startRoundWithPrice(620_00000000);
+        vm.warp(block.timestamp + 121);
+
+        vm.expectRevert("Invalid price");
+        game.resolveRoundWithPrice(1, 0);
+    }
+
+    function testFullFlowWithAdminPrices() public {
+        // Start with admin price
+        game.startRoundWithPrice(620_00000000);
+
+        // Place bets
+        vm.prank(alice);
+        game.placeBet{value: 0.3 ether}(1, TickShot.Direction.Up);
+        vm.prank(bob);
+        game.placeBet{value: 0.2 ether}(1, TickShot.Direction.Down);
+
+        // Resolve with admin price (UP wins)
+        vm.warp(block.timestamp + 121);
+        game.resolveRoundWithPrice(1, 625_00000000);
+
+        // Alice claims
+        uint256 aliceBefore = alice.balance;
+        vm.prank(alice);
+        game.claimWinnings(1);
+
+        // Total=0.5, fee=0.015 (3%), poolAfterFee=0.485
+        // Alice payout = (0.3/0.3) * 0.485 = 0.485
+        assertEq(alice.balance - aliceBefore, 0.485 ether);
+
+        // Start next round with admin price
+        game.startRoundWithPrice(625_00000000);
+        assertEq(game.currentRoundId(), 2);
     }
 }

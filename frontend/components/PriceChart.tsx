@@ -1,14 +1,31 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { createChart, CandlestickSeries, CandlestickData, Time } from "lightweight-charts";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { createChart, CandlestickSeries, LineSeries, CandlestickData, Time } from "lightweight-charts";
 import { BINANCE_KLINE_URL, BINANCE_WS_URL } from "@/lib/constants";
+
+// Binance aggTrade WebSocket for tick-level updates
+const BINANCE_TRADE_WS = "wss://stream.binance.com:9443/ws/bnbusdt@aggTrade";
 
 export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) => void }) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [price, setPrice] = useState<number | null>(null);
   const [prevPrice, setPrevPrice] = useState<number | null>(null);
   const [flash, setFlash] = useState(false);
+  const [ticksPerSec, setTicksPerSec] = useState(0);
+  const tickCounter = useRef(0);
+  const lastCountReset = useRef(Date.now());
+
+  // Track ticks per second for "activity" indicator
+  const countTick = useCallback(() => {
+    tickCounter.current++;
+    const now = Date.now();
+    if (now - lastCountReset.current >= 1000) {
+      setTicksPerSec(tickCounter.current);
+      tickCounter.current = 0;
+      lastCountReset.current = now;
+    }
+  }, []);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -30,7 +47,7 @@ export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) 
       },
       timeScale: {
         timeVisible: true,
-        secondsVisible: false,
+        secondsVisible: true,
         borderColor: "rgba(255,255,255,0.06)",
       },
       rightPriceScale: {
@@ -40,7 +57,7 @@ export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) 
       height: 420,
     });
 
-    const series = chart.addSeries(CandlestickSeries, {
+    const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#22c55e",
       downColor: "#ef4444",
       borderUpColor: "#16a34a",
@@ -49,6 +66,17 @@ export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) 
       wickDownColor: "#ef4444",
     });
 
+    // Real-time price line (tick-by-tick from aggTrade)
+    const priceLine = chart.addSeries(LineSeries, {
+      color: "#F0B90B",
+      lineWidth: 2,
+      priceLineVisible: true,
+      lastValueVisible: true,
+      crosshairMarkerVisible: false,
+      priceLineColor: "#F0B90B",
+    });
+
+    // Load historical 1m candles
     fetch(BINANCE_KLINE_URL)
       .then((res) => res.json())
       .then((data: unknown[]) => {
@@ -59,7 +87,7 @@ export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) 
           low: parseFloat(k[3]),
           close: parseFloat(k[4]),
         }));
-        series.setData(candles);
+        candleSeries.setData(candles);
         if (candles.length > 0) {
           const p = candles[candles.length - 1].close;
           setPrice(p);
@@ -69,8 +97,9 @@ export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) 
       })
       .catch(console.error);
 
-    const ws = new WebSocket(BINANCE_WS_URL);
-    ws.onmessage = (event) => {
+    // 1-minute kline WebSocket for candle updates
+    const klineWs = new WebSocket(BINANCE_WS_URL);
+    klineWs.onmessage = (event) => {
       const msg = JSON.parse(event.data);
       const k = msg.k;
       if (!k) return;
@@ -82,16 +111,28 @@ export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) 
         low: parseFloat(k.l),
         close: parseFloat(k.c),
       };
-      series.update(candle);
-      const newPrice = candle.close;
-      setPrevPrice((prev) => prev);
+      candleSeries.update(candle);
+    };
+
+    // Tick-by-tick aggTrade WebSocket for real-time price line
+    const tradeWs = new WebSocket(BINANCE_TRADE_WS);
+    tradeWs.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      const tradePrice = parseFloat(msg.p);
+      const tradeTime = Math.floor(msg.T / 1000) as Time;
+
+      // Update the real-time price line
+      priceLine.update({ time: tradeTime, value: tradePrice });
+
+      // Update state
       setPrice((prev) => {
         setPrevPrice(prev);
-        return newPrice;
+        return tradePrice;
       });
       setFlash(true);
-      setTimeout(() => setFlash(false), 400);
-      onPriceUpdate?.(newPrice);
+      setTimeout(() => setFlash(false), 200);
+      onPriceUpdate?.(tradePrice);
+      countTick();
     };
 
     const resizeObserver = new ResizeObserver((entries) => {
@@ -102,7 +143,8 @@ export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) 
     resizeObserver.observe(chartContainerRef.current);
 
     return () => {
-      ws.close();
+      klineWs.close();
+      tradeWs.close();
       resizeObserver.disconnect();
       chart.remove();
     };
@@ -121,6 +163,13 @@ export function PriceChart({ onPriceUpdate }: { onPriceUpdate?: (price: number) 
             <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Live</span>
           </div>
           <span className="text-sm font-medium text-gray-300">BNB / USD</span>
+          {/* Activity indicator */}
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white/[0.03]">
+            <div className={`w-1 h-1 rounded-full ${ticksPerSec > 5 ? "bg-green-400" : ticksPerSec > 0 ? "bg-yellow-400" : "bg-gray-600"} animate-pulse`} />
+            <span className="text-[10px] font-mono text-gray-500">
+              {ticksPerSec > 0 ? `${ticksPerSec} tps` : "..."}
+            </span>
+          </div>
         </div>
         {price && (
           <div className="flex items-center gap-3">

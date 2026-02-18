@@ -141,8 +141,25 @@ export const TICKSHOT_ABI = [
   },
   {
     type: "function",
+    name: "resolveRoundWithPrice",
+    inputs: [
+      { name: "_roundId", type: "uint256" },
+      { name: "_price", type: "int256" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "startRound",
     inputs: [],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "startRoundWithPrice",
+    inputs: [{ name: "_price", type: "int256" }],
     outputs: [],
     stateMutability: "nonpayable",
   },

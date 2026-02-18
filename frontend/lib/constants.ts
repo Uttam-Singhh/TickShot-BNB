@@ -1,6 +1,6 @@
 export const CONTRACT_ADDRESS: `0x${string}` =
   (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS as `0x${string}`) ??
-  "0x3aa9A5AB43A30D0Fc811cf3A39DC71EC80c90b56";
+  "0x70474c100F6B82e8Def7Fa2797863b9af62C9467";
 
 export const ROUND_DURATION = 120; // seconds
 export const LOCK_DURATION = 96;

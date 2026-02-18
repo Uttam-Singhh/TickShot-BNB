@@ -10,16 +10,16 @@ Parimutuel betting game on BNB/USD price direction. 2-minute rounds, winners spl
 
 | Item | Value |
 |------|-------|
-| **Contract Address** | [`0x3aa9A5AB43A30D0Fc811cf3A39DC71EC80c90b56`](https://testnet.bscscan.com/address/0x3aa9A5AB43A30D0Fc811cf3A39DC71EC80c90b56) |
-| **Deploy Tx** | [`0x0d5f543f...`](https://testnet.bscscan.com/tx/0x0d5f543faae6370dda9bbbb288a3f8ca5ee00287a0a96a9e709d14f8a9f2523f) |
+| **Contract Address** | [`0x70474c100F6B82e8Def7Fa2797863b9af62C9467`](https://testnet.bscscan.com/address/0x70474c100F6B82e8Def7Fa2797863b9af62C9467) |
+| **Deploy Tx** | [`0x2270daef...`](https://testnet.bscscan.com/tx/0x2270daef53f947cb2307417cb9168a8a13b074a6353cfea2efead251c2f85c71) |
 | **Chain** | BSC Testnet (Chain ID 97) |
-| **Chainlink Oracle** | [`0x2514895c72f50D8bd4B4F9b1110F0D6bD2c97526`](https://testnet.bscscan.com/address/0x2514895c72f50D8bd4B4F9b1110F0D6bD2c97526) (BNB/USD) |
+| **Price Feed** | Binance BNB/USDT API (real-time) + Chainlink BNB/USD (fallback) |
 
 ## How It Works
 
-1. Admin starts a 2-minute round, locking the current BNB/USD price from Chainlink
+1. Admin starts a 2-minute round, locking the current BNB/USD price (from Binance real-time feed)
 2. Users bet UP or DOWN on whether price will be higher or lower at round end (betting window: first 96 seconds)
-3. After 2 minutes, admin resolves the round with the new Chainlink price
+3. After 2 minutes, admin resolves the round with the latest Binance price
 4. Winners split the total pool proportionally (minus 3% platform fee)
 5. Ties or single-side bets result in full refunds
 
@@ -44,7 +44,7 @@ cd TickShot-BNB
 cd contracts
 forge install
 forge build
-forge test -vvv  # All 20 tests should pass
+forge test -vvv  # All 27 tests should pass
 ```
 
 ### 3. Deploy to BSC Testnet
@@ -90,9 +90,11 @@ Or use the Admin Panel in the frontend (visible only to the deployer wallet).
 
 | Function | Access | Description |
 |----------|--------|-------------|
-| `startRound()` | Admin | Start a new 2-min round with Chainlink start price |
+| `startRound()` | Admin | Start round with Chainlink price |
+| `startRoundWithPrice(price)` | Admin | Start round with admin-submitted price (Binance) |
 | `placeBet(roundId, direction)` | Anyone (payable) | Bet tBNB on UP (0) or DOWN (1) |
-| `resolveRound(roundId)` | Admin | Settle round with Chainlink end price |
+| `resolveRound(roundId)` | Admin | Settle round with Chainlink price |
+| `resolveRoundWithPrice(roundId, price)` | Admin | Settle round with admin-submitted price |
 | `claimWinnings(roundId)` | Anyone | Claim proportional payout if winner |
 | `withdrawFees()` | Admin | Withdraw accumulated 3% fees |
 
@@ -102,7 +104,7 @@ Or use the Admin Panel in the frontend (visible only to the deployer wallet).
 TickShot-BNB/
 ├── contracts/               # Foundry project
 │   ├── src/TickShot.sol     # Core game contract
-│   ├── test/TickShot.t.sol  # 20 test cases + mock oracle
+│   ├── test/TickShot.t.sol  # 27 test cases + mock oracle
 │   ├── script/Deploy.s.sol  # BSC Testnet deploy script
 │   └── run-rounds.sh       # Auto round runner
 ├── frontend/                # Next.js 14

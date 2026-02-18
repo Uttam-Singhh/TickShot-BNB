@@ -67,8 +67,31 @@ contract TickShot is ReentrancyGuard {
 
     // ── Admin Functions ────────────────────────────────────────────────
 
+    /// @notice Start a round using Chainlink oracle price
     function startRound() external onlyAdmin {
-        // If there's a previous round, it must be settled
+        int256 price = _getLatestPrice();
+        _startRoundInternal(price);
+    }
+
+    /// @notice Start a round with an admin-submitted price (for stale oracle workaround)
+    function startRoundWithPrice(int256 _price) external onlyAdmin {
+        require(_price > 0, "Invalid price");
+        _startRoundInternal(_price);
+    }
+
+    /// @notice Resolve a round using Chainlink oracle price
+    function resolveRound(uint256 _roundId) external onlyAdmin {
+        int256 endPrice = _getLatestPrice();
+        _resolveRoundInternal(_roundId, endPrice);
+    }
+
+    /// @notice Resolve a round with an admin-submitted price (for stale oracle workaround)
+    function resolveRoundWithPrice(uint256 _roundId, int256 _price) external onlyAdmin {
+        require(_price > 0, "Invalid price");
+        _resolveRoundInternal(_roundId, _price);
+    }
+
+    function _startRoundInternal(int256 price) internal {
         if (currentRoundId > 0) {
             require(
                 rounds[currentRoundId].status == RoundStatus.Settled,
@@ -77,7 +100,6 @@ contract TickShot is ReentrancyGuard {
         }
 
         currentRoundId++;
-        int256 price = _getLatestPrice();
 
         uint256 startTime = block.timestamp;
         uint256 lockTime = startTime + LOCK_DURATION;
@@ -99,12 +121,11 @@ contract TickShot is ReentrancyGuard {
         emit RoundStarted(currentRoundId, price, startTime, lockTime, endTime);
     }
 
-    function resolveRound(uint256 _roundId) external onlyAdmin {
+    function _resolveRoundInternal(uint256 _roundId, int256 endPrice) internal {
         Round storage round = rounds[_roundId];
         require(round.status == RoundStatus.Open || round.status == RoundStatus.Locked, "Round not active");
         require(block.timestamp >= round.endTime, "Round not ended");
 
-        int256 endPrice = _getLatestPrice();
         round.endPrice = endPrice;
         round.status = RoundStatus.Settled;
 
@@ -124,11 +145,9 @@ contract TickShot is ReentrancyGuard {
                 : round.totalDownPool;
 
             if (winningPool > 0 && winningPool < totalPool) {
-                // There are both winners and losers — take fee
                 uint256 fee = (totalPool * FEE_BPS) / 10000;
                 accumulatedFees += fee;
             }
-            // If winningPool == 0 or winningPool == totalPool, no fee (refund scenario)
         }
 
         emit RoundResolved(_roundId, round.result, endPrice);
